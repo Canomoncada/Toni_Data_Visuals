@@ -1,0 +1,993 @@
+# ================================================================
+# Statistical Description Analysis for GAI Editorial Project
+# Current Date and Time (UTC): 2025-06-05 20:28:05
+# Current User's Login: Canomoncada
+# Version: Statistical_Description_v1.0_Custom_Export
+# ================================================================
+
+# Load required libraries
+library(readr)
+library(dplyr)
+library(openxlsx)
+library(tidyr)
+library(fs)
+
+# Set execution metadata
+execution_metadata <- list(
+  datetime_utc = "2025-06-05 20:28:05",
+  user = "Canomoncada",
+  version = "Statistical_Description_v1.0_Custom_Export",
+  analysis_type = "Comprehensive Statistical Summary",
+  data_source = "Clean GAI Editorial Indicators",
+  export_path = "/Volumes/VALEN/Africa:LAC/Harmonization/Tony H/gai_editorial_uppercase_labels/sunmm"
+)
+
+message("Statistical Description Analysis Started")
+message("Timestamp: ", execution_metadata$datetime_utc)
+message("User: ", execution_metadata$user)
+message("Export Path: ", execution_metadata$export_path)
+
+# ================================================================
+# CREATE EXPORT DIRECTORY
+# ================================================================
+
+# Create the export directory if it doesn't exist
+tryCatch({
+  fs::dir_create(execution_metadata$export_path, recurse = TRUE)
+  message("✓ Export directory created/verified: ", execution_metadata$export_path)
+}, error = function(e) {
+  message("✗ Error creating export directory: ", e$message)
+  stop("Cannot proceed without export directory")
+})
+
+# ================================================================
+# LOAD CLEANED DATASETS
+# ================================================================
+
+message("\nLoading cleaned datasets...")
+
+# Load the cleaned datasets with error handling
+tryCatch({
+  tech <- read_csv("Technology_Indicators_CLEAN.csv")
+  message("✓ Technology_Indicators_CLEAN.csv loaded: ", nrow(tech), " countries")
+}, error = function(e) {
+  message("✗ Error loading Technology data: ", e$message)
+  tech <- NULL
+})
+
+tryCatch({
+  sustain <- read_csv("Sustainability_Indicators_CLEAN.csv")
+  message("✓ Sustainability_Indicators_CLEAN.csv loaded: ", nrow(sustain), " countries")
+}, error = function(e) {
+  message("✗ Error loading Sustainability data: ", e$message)
+  sustain <- NULL
+})
+
+tryCatch({
+  geo <- read_csv("Geopolitical_Indicators_CLEAN.csv")
+  message("✓ Geopolitical_Indicators_CLEAN.csv loaded: ", nrow(geo), " countries")
+}, error = function(e) {
+  message("✗ Error loading Geopolitical data: ", e$message)
+  geo <- NULL
+})
+
+# Verify all data is loaded
+if (is.null(tech) || is.null(sustain) || is.null(geo)) {
+  stop("ERROR: Could not load all clean data files. Please ensure files exist in working directory.")
+}
+
+# ================================================================
+# REGION MAPPING FUNCTION
+# ================================================================
+
+# Define region assignments based on GAI Editorial standards
+assign_region <- function(country) {
+  if (is.na(country) || country == "") return(NA_character_)
+  
+  # LAC countries
+  lac_countries <- c(
+    "Argentina", "Belize", "Bolivia", "Brazil", "Chile", "Colombia", "Costa Rica",
+    "Dominican Republic", "Ecuador", "El Salvador", "Guatemala", "Guyana",
+    "Honduras", "Jamaica", "Mexico", "Nicaragua", "Panama", "Paraguay", "Peru",
+    "Suriname", "Trinidad and Tobago", "Uruguay", "Venezuela"
+  )
+  
+  # OECD countries (including overlap with LAC)
+  oecd_countries <- c(
+    "Australia", "Austria", "Belgium", "Canada", "Czech Republic", "Denmark", 
+    "Estonia", "Finland", "France", "Germany", "Greece", "Hungary", "Iceland", 
+    "Ireland", "Israel", "Italy", "Japan", "Latvia", "Lithuania", "Luxembourg", 
+    "Netherlands", "New Zealand", "Norway", "Poland", "Portugal", "Slovakia", 
+    "Slovenia", "South Korea", "Spain", "Sweden", "Switzerland", "Turkey", 
+    "United Kingdom", "United States"
+  )
+  
+  # ASEAN countries
+  asean_countries <- c(
+    "Brunei Darussalam", "Cambodia", "Indonesia", "Laos", "Malaysia", 
+    "Myanmar", "Philippines", "Singapore", "Thailand", "Vietnam"
+  )
+  
+  # China
+  china_countries <- c("China")
+  
+  # Assign regions (LAC takes priority for overlap)
+  if (country %in% lac_countries) {
+    return("LAC")
+  } else if (country %in% china_countries) {
+    return("CHINA")
+  } else if (country %in% asean_countries) {
+    return("ASEAN")
+  } else if (country %in% oecd_countries) {
+    return("OECD")
+  } else {
+    return("OTHER")
+  }
+}
+
+# Add Region column to all datasets
+tech$Region <- sapply(tech$Country, assign_region)
+sustain$Region <- sapply(sustain$Country, assign_region)
+geo$Region <- sapply(geo$Country, assign_region)
+
+message("✓ Region assignments completed for all datasets")
+
+# ================================================================
+# STATISTICAL DESCRIPTION FUNCTION
+# ================================================================
+
+# Function to get comprehensive summary stats for all numeric columns
+describe_data <- function(df, pillar_name) {
+  cat("===== Statistical Description for", pillar_name, "=====\n")
+  
+  # Get numeric columns (excluding Country and Region)
+  numeric_cols <- df[, sapply(df, is.numeric)]
+  
+  if (ncol(numeric_cols) == 0) {
+    cat("No numeric columns found\n\n")
+    return(NULL)
+  }
+  
+  # Calculate comprehensive statistics
+  stats <- data.frame(
+    Indicator = names(numeric_cols),
+    N_Valid = sapply(numeric_cols, function(x) sum(!is.na(x))),
+    N_Missing = sapply(numeric_cols, function(x) sum(is.na(x))),
+    Mean = sapply(numeric_cols, mean, na.rm = TRUE),
+    Median = sapply(numeric_cols, median, na.rm = TRUE),
+    SD = sapply(numeric_cols, sd, na.rm = TRUE),
+    Min = sapply(numeric_cols, min, na.rm = TRUE),
+    Max = sapply(numeric_cols, max, na.rm = TRUE),
+    Q1 = sapply(numeric_cols, quantile, 0.25, na.rm = TRUE),
+    Q3 = sapply(numeric_cols, quantile, 0.75, na.rm = TRUE),
+    Coverage_Pct = round(sapply(numeric_cols, function(x) sum(!is.na(x)) / length(x) * 100), 1),
+    stringsAsFactors = FALSE
+  )
+  
+  # Round numeric values for better display
+  stats[, c("Mean", "Median", "SD", "Min", "Max", "Q1", "Q3")] <- 
+    round(stats[, c("Mean", "Median", "SD", "Min", "Max", "Q1", "Q3")], 4)
+  
+  print(stats, row.names = FALSE)
+  cat("\n")
+  
+  return(stats)
+}
+
+# ================================================================
+# REGIONAL SUMMARY FUNCTION
+# ================================================================
+
+# Function to create regional summaries
+create_regional_summary <- function(df, pillar_name) {
+  cat("===== Regional Summary for", pillar_name, "=====\n")
+  
+  if (!"Region" %in% names(df)) {
+    cat("No Region column found\n\n")
+    return(NULL)
+  }
+  
+  # Regional summary with comprehensive statistics
+  regional_summary <- df %>% 
+    group_by(Region) %>% 
+    summarise(
+      N_Countries = n(),
+      across(where(is.numeric), 
+             list(
+               mean = ~round(mean(.x, na.rm = TRUE), 4),
+               median = ~round(median(.x, na.rm = TRUE), 4),
+               sd = ~round(sd(.x, na.rm = TRUE), 4),
+               min = ~round(min(.x, na.rm = TRUE), 4),
+               max = ~round(max(.x, na.rm = TRUE), 4),
+               n_missing = ~sum(is.na(.x)),
+               coverage_pct = ~round(sum(!is.na(.x)) / n() * 100, 1)
+             )),
+      .groups = 'drop'
+    )
+  
+  print(regional_summary)
+  cat("\n")
+  
+  return(regional_summary)
+}
+
+# ================================================================
+# RUN STATISTICAL DESCRIPTIONS
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("RUNNING STATISTICAL DESCRIPTIONS")
+message(paste(rep("=", 60), collapse=""))
+
+# Run comprehensive analysis for each pillar
+tech_stats <- describe_data(tech, "Technology")
+sustain_stats <- describe_data(sustain, "Sustainability")
+geo_stats <- describe_data(geo, "Geopolitical")
+
+# ================================================================
+# RUN REGIONAL SUMMARIES
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("RUNNING REGIONAL SUMMARIES")
+message(paste(rep("=", 60), collapse=""))
+
+# Run regional analysis for each pillar
+tech_regional <- create_regional_summary(tech, "Technology")
+sustain_regional <- create_regional_summary(sustain, "Sustainability")
+geo_regional <- create_regional_summary(geo, "Geopolitical")
+
+# ================================================================
+# EXPORT TO CUSTOM DIRECTORY
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("EXPORTING RESULTS TO CUSTOM DIRECTORY")
+message("Export Directory: ", execution_metadata$export_path)
+message(paste(rep("=", 60), collapse=""))
+
+# Create comprehensive Excel workbook with multiple sheets
+create_statistical_workbook <- function() {
+  wb <- createWorkbook()
+  
+  # Add metadata sheet
+  addWorksheet(wb, "Metadata")
+  metadata_df <- data.frame(
+    Parameter = c("Analysis Date", "User", "Version", "Analysis Type", "Data Source", "Export Path"),
+    Value = c(execution_metadata$datetime_utc, execution_metadata$user, 
+              execution_metadata$version, execution_metadata$analysis_type, 
+              execution_metadata$data_source, execution_metadata$export_path),
+    stringsAsFactors = FALSE
+  )
+  writeData(wb, "Metadata", metadata_df)
+  
+  # Add statistical summaries
+  if (!is.null(tech_stats)) {
+    addWorksheet(wb, "Technology_Stats")
+    writeData(wb, "Technology_Stats", tech_stats)
+  }
+  
+  if (!is.null(sustain_stats)) {
+    addWorksheet(wb, "Sustainability_Stats")
+    writeData(wb, "Sustainability_Stats", sustain_stats)
+  }
+  
+  if (!is.null(geo_stats)) {
+    addWorksheet(wb, "Geopolitical_Stats")
+    writeData(wb, "Geopolitical_Stats", geo_stats)
+  }
+  
+  # Add regional summaries (truncated for Excel compatibility)
+  if (!is.null(tech_regional)) {
+    addWorksheet(wb, "Technology_Regional")
+    tech_regional_truncated <- tech_regional[, 1:min(20, ncol(tech_regional))]
+    writeData(wb, "Technology_Regional", tech_regional_truncated)
+  }
+  
+  if (!is.null(sustain_regional)) {
+    addWorksheet(wb, "Sustainability_Regional")
+    sustain_regional_truncated <- sustain_regional[, 1:min(20, ncol(sustain_regional))]
+    writeData(wb, "Sustainability_Regional", sustain_regional_truncated)
+  }
+  
+  if (!is.null(geo_regional)) {
+    addWorksheet(wb, "Geopolitical_Regional")
+    geo_regional_truncated <- geo_regional[, 1:min(20, ncol(geo_regional))]
+    writeData(wb, "Geopolitical_Regional", geo_regional_truncated)
+  }
+  
+  return(wb)
+}
+
+# Create and save the comprehensive workbook to custom path
+tryCatch({
+  stats_workbook <- create_statistical_workbook()
+  comprehensive_file <- file.path(execution_metadata$export_path, "GAI_Editorial_Statistical_Summary_Complete.xlsx")
+  saveWorkbook(stats_workbook, comprehensive_file, overwrite = TRUE)
+  message("✓ Comprehensive statistical summary exported to: ", comprehensive_file)
+}, error = function(e) {
+  message("✗ Error creating comprehensive Excel workbook: ", e$message)
+})
+
+# Export individual statistical summaries to custom path
+tryCatch({
+  if (!is.null(tech_stats)) {
+    tech_file <- file.path(execution_metadata$export_path, "Technology_Indicators_Summary.xlsx")
+    write.xlsx(tech_stats, tech_file, overwrite = TRUE)
+    message("✓ Technology summary exported to: ", tech_file)
+  }
+}, error = function(e) {
+  message("✗ Error exporting Technology summary: ", e$message)
+})
+
+tryCatch({
+  if (!is.null(sustain_stats)) {
+    sustain_file <- file.path(execution_metadata$export_path, "Sustainability_Indicators_Summary.xlsx")
+    write.xlsx(sustain_stats, sustain_file, overwrite = TRUE)
+    message("✓ Sustainability summary exported to: ", sustain_file)
+  }
+}, error = function(e) {
+  message("✗ Error exporting Sustainability summary: ", e$message)
+})
+
+tryCatch({
+  if (!is.null(geo_stats)) {
+    geo_file <- file.path(execution_metadata$export_path, "Geopolitical_Indicators_Summary.xlsx")
+    write.xlsx(geo_stats, geo_file, overwrite = TRUE)
+    message("✓ Geopolitical summary exported to: ", geo_file)
+  }
+}, error = function(e) {
+  message("✗ Error exporting Geopolitical summary: ", e$message)
+})
+
+# Export regional summaries as separate files (CSV for better handling of wide data)
+tryCatch({
+  if (!is.null(tech_regional)) {
+    tech_regional_file <- file.path(execution_metadata$export_path, "Technology_Regional_Summary.csv")
+    write.csv(tech_regional, tech_regional_file, row.names = FALSE)
+    message("✓ Technology regional summary exported to: ", tech_regional_file)
+  }
+}, error = function(e) {
+  message("✗ Error exporting Technology regional summary: ", e$message)
+})
+
+tryCatch({
+  if (!is.null(sustain_regional)) {
+    sustain_regional_file <- file.path(execution_metadata$export_path, "Sustainability_Regional_Summary.csv")
+    write.csv(sustain_regional, sustain_regional_file, row.names = FALSE)
+    message("✓ Sustainability regional summary exported to: ", sustain_regional_file)
+  }
+}, error = function(e) {
+  message("✗ Error exporting Sustainability regional summary: ", e$message)
+})
+
+tryCatch({
+  if (!is.null(geo_regional)) {
+    geo_regional_file <- file.path(execution_metadata$export_path, "Geopolitical_Regional_Summary.csv")
+    write.csv(geo_regional, geo_regional_file, row.names = FALSE)
+    message("✓ Geopolitical regional summary exported to: ", geo_regional_file)
+  }
+}, error = function(e) {
+  message("✗ Error exporting Geopolitical regional summary: ", e$message)
+})
+
+# ================================================================
+# DATA QUALITY ASSESSMENT
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("DATA QUALITY ASSESSMENT")
+message(paste(rep("=", 60), collapse=""))
+
+# Overall data quality summary
+assess_data_quality <- function() {
+  total_countries <- unique(c(tech$Country, sustain$Country, geo$Country))
+  
+  cat("OVERALL DATA QUALITY SUMMARY\n")
+  cat("============================\n")
+  cat("Total unique countries:", length(total_countries), "\n")
+  cat("Technology indicators:", ncol(tech) - 2, "\n")  # Minus Country and Region
+  cat("Sustainability indicators:", ncol(sustain) - 2, "\n")
+  cat("Geopolitical indicators:", ncol(geo) - 2, "\n")
+  
+  # Coverage by pillar
+  tech_coverage <- round(mean(sapply(tech[sapply(tech, is.numeric)], function(x) sum(!is.na(x)) / length(x))), 3)
+  sustain_coverage <- round(mean(sapply(sustain[sapply(sustain, is.numeric)], function(x) sum(!is.na(x)) / length(x))), 3)
+  geo_coverage <- round(mean(sapply(geo[sapply(geo, is.numeric)], function(x) sum(!is.na(x)) / length(x))), 3)
+  
+  cat("\nDATA COVERAGE (% non-missing)\n")
+  cat("Technology:", tech_coverage * 100, "%\n")
+  cat("Sustainability:", sustain_coverage * 100, "%\n")
+  cat("Geopolitical:", geo_coverage * 100, "%\n")
+  
+  # Regional coverage
+  cat("\nREGIONAL DISTRIBUTION\n")
+  all_regions <- table(c(tech$Region, sustain$Region, geo$Region))
+  print(all_regions)
+  
+  # Create summary data frame for export
+  quality_summary <- data.frame(
+    Metric = c("Total Countries", "Technology Indicators", "Sustainability Indicators", 
+               "Geopolitical Indicators", "Technology Coverage %", "Sustainability Coverage %", 
+               "Geopolitical Coverage %"),
+    Value = c(length(total_countries), ncol(tech) - 2, ncol(sustain) - 2, ncol(geo) - 2,
+              tech_coverage * 100, sustain_coverage * 100, geo_coverage * 100),
+    stringsAsFactors = FALSE
+  )
+  
+  return(quality_summary)
+}
+
+quality_summary <- assess_data_quality()
+
+# Export data quality summary
+tryCatch({
+  quality_file <- file.path(execution_metadata$export_path, "Data_Quality_Assessment.xlsx")
+  write.xlsx(quality_summary, quality_file, overwrite = TRUE)
+  message("✓ Data quality assessment exported to: ", quality_file)
+}, error = function(e) {
+  message("✗ Error exporting data quality assessment: ", e$message)
+})
+
+# ================================================================
+# FINAL SUMMARY
+# ================================================================
+
+message("\n", paste(rep("=", 80), collapse=""))
+message("STATISTICAL DESCRIPTION ANALYSIS COMPLETED")
+message(paste(rep("=", 80), collapse=""))
+
+message("\nEXPORT DIRECTORY: ", execution_metadata$export_path)
+
+message("\nCOMPLETED ANALYSES:")
+message("✓ Comprehensive statistical descriptions for all three pillars")
+message("✓ Regional summaries with detailed breakdowns")
+message("✓ Data quality assessment")
+message("✓ Multiple exports to custom directory")
+
+message("\nGENERATED FILES IN SUNMM DIRECTORY:")
+message("- GAI_Editorial_Statistical_Summary_Complete.xlsx (comprehensive workbook)")
+message("- Technology_Indicators_Summary.xlsx")
+message("- Sustainability_Indicators_Summary.xlsx")  
+message("- Geopolitical_Indicators_Summary.xlsx")
+message("- Technology_Regional_Summary.csv")
+message("- Sustainability_Regional_Summary.csv")
+message("- Geopolitical_Regional_Summary.csv")
+message("- Data_Quality_Assessment.xlsx")
+
+message("\nSTATISTICS INCLUDED:")
+message("- N Valid, N Missing, Coverage %")
+message("- Mean, Median, Standard Deviation")
+message("- Min, Max, Q1, Q3")
+message("- Regional breakdowns for all metrics")
+message("- Comprehensive data quality metrics")
+
+message("\nAnalysis completed at:", Sys.time())
+message("User:", execution_metadata$user)
+message("Export path:", execution_metadata$export_path)
+message("All statistical summaries exported to sunmm directory!")
+
+message("\n", paste(rep("=", 80), collapse=""))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# ================================================================
+# Comprehensive Summary Table Creation for GAI Editorial Project
+# Current Date and Time (UTC - YYYY-MM-DD HH:MM:SS formatted): 2025-06-05 20:39:30
+# Current User's Login: Canomoncada
+# Version: Summary_Table_Generator_v1.2_Fixed
+# ================================================================
+
+# Load required libraries
+library(readxl)
+library(dplyr)
+library(openxlsx)
+library(webshot2)
+library(fs)
+
+# Set execution metadata
+execution_metadata <- list(
+  datetime_utc = "2025-06-05 20:39:30",
+  user = "Canomoncada",
+  version = "Summary_Table_Generator_v1.2_Fixed",
+  analysis_type = "Comprehensive Summary Table Generation (Excel/CSV Only)",
+  data_source = "Statistical Summary Files",
+  export_path = "/Volumes/VALEN/Africa:LAC/Harmonization/Tony H/gai_editorial_uppercase_labels/sunmm"
+)
+
+message("Comprehensive Summary Table Generation Started (Fixed Version)")
+message("Timestamp: ", execution_metadata$datetime_utc)
+message("User: ", execution_metadata$user)
+message("Export Path: ", execution_metadata$export_path)
+
+# ================================================================
+# STEP 1: READ AND COMBINE SUMMARY DATA
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("STEP 1: READING AND COMBINING SUMMARY DATA")
+message(paste(rep("=", 60), collapse=""))
+
+# Define file paths
+summary_files <- list(
+  technology = file.path(execution_metadata$export_path, "Technology_Indicators_Summary.xlsx"),
+  sustainability = file.path(execution_metadata$export_path, "Sustainability_Indicators_Summary.xlsx"),
+  geopolitical = file.path(execution_metadata$export_path, "Geopolitical_Indicators_Summary.xlsx")
+)
+
+# Read each file with error handling
+read_summary_data <- function() {
+  summaries <- list()
+  
+  # Technology
+  tryCatch({
+    tech <- read_excel(summary_files$technology)
+    tech$Pillar <- "Technology"
+    summaries$technology <- tech
+    message("✓ Technology summary loaded: ", nrow(tech), " indicators")
+  }, error = function(e) {
+    message("✗ Error loading Technology summary: ", e$message)
+    summaries$technology <- NULL
+  })
+  
+  # Sustainability
+  tryCatch({
+    sust <- read_excel(summary_files$sustainability)
+    sust$Pillar <- "Sustainability"
+    summaries$sustainability <- sust
+    message("✓ Sustainability summary loaded: ", nrow(sust), " indicators")
+  }, error = function(e) {
+    message("✗ Error loading Sustainability summary: ", e$message)
+    summaries$sustainability <- NULL
+  })
+  
+  # Geopolitical
+  tryCatch({
+    geo <- read_excel(summary_files$geopolitical)
+    geo$Pillar <- "Geopolitical"
+    summaries$geopolitical <- geo
+    message("✓ Geopolitical summary loaded: ", nrow(geo), " indicators")
+  }, error = function(e) {
+    message("✗ Error loading Geopolitical summary: ", e$message)
+    summaries$geopolitical <- NULL
+  })
+  
+  return(summaries)
+}
+
+# Load all summaries
+summaries <- read_summary_data()
+
+# Combine all summaries
+if (length(summaries) > 0) {
+  summary_all <- bind_rows(summaries)
+  message("✓ Combined summary created: ", nrow(summary_all), " total indicators across ", 
+          length(unique(summary_all$Pillar)), " pillars")
+} else {
+  stop("ERROR: No summary files could be loaded")
+}
+
+# ================================================================
+# STEP 2: PREPARE TABLE STRUCTURE AND ADD STATUS (FIXED)
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("STEP 2: PREPARING TABLE STRUCTURE AND STATUS ASSIGNMENT (FIXED)")
+message(paste(rep("=", 60), collapse=""))
+
+# Add Status assignment based on performance metrics - FIXED VERSION
+summary_enhanced <- summary_all %>%
+  # First filter out any rows with missing Mean values
+  filter(!is.na(Mean)) %>%
+  group_by(Pillar) %>%
+  mutate(
+    # Status based on Mean performance (higher = better for our indicators)
+    # FIXED: Remove na.rm argument from rank() function
+    Mean_Rank = rank(-Mean, ties.method = "min"),
+    Coverage_Rank = rank(-Coverage_Pct, ties.method = "min"),
+    
+    # Calculate quantiles for each pillar
+    Mean_Q75 = quantile(Mean, 0.75, na.rm = TRUE),
+    Mean_Q25 = quantile(Mean, 0.25, na.rm = TRUE),
+    
+    # Performance Status
+    Performance_Status = case_when(
+      Mean_Rank == 1 ~ "Leader",
+      Mean_Rank == max(Mean_Rank, na.rm = TRUE) ~ "Laggard",
+      Mean >= Mean_Q75 ~ "High Performer",
+      Mean <= Mean_Q25 ~ "Low Performer",
+      TRUE ~ "Average Performer"
+    ),
+    
+    # Data Quality Status
+    Data_Quality = case_when(
+      Coverage_Pct >= 90 ~ "Excellent",
+      Coverage_Pct >= 75 ~ "Good",
+      Coverage_Pct >= 50 ~ "Fair",
+      TRUE ~ "Poor"
+    ),
+    
+    # Overall Status combining performance and data quality
+    Overall_Status = case_when(
+      Performance_Status == "Leader" & Data_Quality %in% c("Excellent", "Good") ~ "Top Indicator",
+      Performance_Status == "High Performer" & Data_Quality %in% c("Excellent", "Good") ~ "Strong Indicator",
+      Performance_Status == "Laggard" | Data_Quality == "Poor" ~ "Needs Attention",
+      TRUE ~ "Standard Indicator"
+    )
+  ) %>%
+  ungroup() %>%
+  # Remove helper columns
+  select(-Mean_Q75, -Mean_Q25)
+
+message("✓ Status assignments completed (FIXED)")
+message("  Performance categories: ", paste(unique(summary_enhanced$Performance_Status), collapse = ", "))
+message("  Data quality categories: ", paste(unique(summary_enhanced$Data_Quality), collapse = ", "))
+message("  Indicators processed: ", nrow(summary_enhanced))
+
+# ================================================================
+# STEP 3: CREATE MULTIPLE TABLE VERSIONS
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("STEP 3: CREATING MULTIPLE TABLE VERSIONS")
+message(paste(rep("=", 60), collapse=""))
+
+# Version 1: Comprehensive Table (All Pillars Combined)
+table_comprehensive <- summary_enhanced %>%
+  select(Pillar, Indicator, Mean, Median, SD, Min, Max, Q1, Q3, N_Valid, Coverage_Pct, 
+         Performance_Status, Data_Quality, Overall_Status) %>%
+  arrange(Pillar, desc(Mean))
+
+# Version 2: Summary by Pillar (Aggregated)
+table_by_pillar <- summary_enhanced %>%
+  group_by(Pillar) %>%
+  summarise(
+    N_Indicators = n(),
+    Avg_Mean = round(mean(Mean, na.rm = TRUE), 3),
+    Avg_Coverage = round(mean(Coverage_Pct, na.rm = TRUE), 1),
+    Best_Indicator = Indicator[which.max(Mean)],
+    Best_Performance = round(max(Mean, na.rm = TRUE), 3),
+    Worst_Indicator = Indicator[which.min(Mean)],
+    Worst_Performance = round(min(Mean, na.rm = TRUE), 3),
+    Data_Quality_Score = round(mean(Coverage_Pct, na.rm = TRUE), 1),
+    .groups = 'drop'
+  )
+
+# Version 3: Top Performers Only
+table_top_performers <- summary_enhanced %>%
+  filter(Overall_Status %in% c("Top Indicator", "Strong Indicator")) %>%
+  select(Pillar, Indicator, Mean, Coverage_Pct, Performance_Status, Data_Quality) %>%
+  arrange(Pillar, desc(Mean))
+
+# Version 4: Indicators Needing Attention
+table_attention_needed <- summary_enhanced %>%
+  filter(Overall_Status == "Needs Attention") %>%
+  select(Pillar, Indicator, Mean, Coverage_Pct, Performance_Status, Data_Quality) %>%
+  arrange(Pillar, Mean)
+
+message("✓ Created 4 table versions:")
+message("  - Comprehensive (", nrow(table_comprehensive), " indicators)")
+message("  - By Pillar Summary (", nrow(table_by_pillar), " pillars)")
+message("  - Top Performers (", nrow(table_top_performers), " indicators)")
+message("  - Needs Attention (", nrow(table_attention_needed), " indicators)")
+
+# ================================================================
+# STEP 4: ENHANCED EXCEL EXPORT WITH STYLING
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("STEP 4: CREATING STYLED EXCEL EXPORTS")
+message(paste(rep("=", 60), collapse=""))
+
+# Export directory
+export_dir <- file.path(execution_metadata$export_path, "summary_tables")
+fs::dir_create(export_dir, recurse = TRUE)
+
+# Function to create styled Excel workbook
+create_styled_excel_workbook <- function() {
+  wb <- createWorkbook()
+  
+  # Define styles
+  title_style <- createStyle(fontName = "Arial", fontSize = 14, fontColour = "#1F78B4", 
+                             textDecoration = "bold", halign = "center")
+  header_style <- createStyle(fontName = "Arial", fontSize = 12, fontColour = "white", 
+                              fgFill = "#1F78B4", textDecoration = "bold", halign = "center", 
+                              border = "TopBottomLeftRight")
+  data_style <- createStyle(fontName = "Arial", fontSize = 11, halign = "center", 
+                            border = "TopBottomLeftRight")
+  
+  # Status color styles
+  top_indicator_style <- createStyle(fgFill = "#D4EDDA", fontColour = "#155724")
+  strong_indicator_style <- createStyle(fgFill = "#D1ECF1", fontColour = "#0C5460")
+  needs_attention_style <- createStyle(fgFill = "#F8D7DA", fontColour = "#721C24")
+  standard_style <- createStyle(fgFill = "#FFF3CD", fontColour = "#856404")
+  
+  # Metadata sheet
+  addWorksheet(wb, "Metadata")
+  metadata_df <- data.frame(
+    Parameter = c("Creation Date", "User", "Version", "Analysis Type", "Total Indicators", 
+                  "Pillars", "Top Performers", "Need Attention"),
+    Value = c(execution_metadata$datetime_utc, execution_metadata$user, 
+              execution_metadata$version, execution_metadata$analysis_type,
+              nrow(summary_all), paste(unique(summary_all$Pillar), collapse = ", "),
+              nrow(table_top_performers), nrow(table_attention_needed)),
+    stringsAsFactors = FALSE
+  )
+  writeData(wb, "Metadata", metadata_df)
+  addStyle(wb, "Metadata", header_style, rows = 1, cols = 1:2)
+  
+  # Comprehensive table with conditional formatting
+  addWorksheet(wb, "All_Indicators")
+  writeData(wb, "All_Indicators", "GAI Editorial Comprehensive Indicator Summary", startRow = 1)
+  writeData(wb, "All_Indicators", table_comprehensive, startRow = 3)
+  
+  # Apply styles to comprehensive table
+  addStyle(wb, "All_Indicators", title_style, rows = 1, cols = 1)
+  addStyle(wb, "All_Indicators", header_style, rows = 3, cols = 1:ncol(table_comprehensive))
+  
+  # Apply conditional formatting for Overall_Status (only if data exists)
+  if (nrow(table_comprehensive) > 0) {
+    for (i in 1:nrow(table_comprehensive)) {
+      status <- table_comprehensive$Overall_Status[i]
+      row_num <- i + 3
+      
+      if (!is.na(status)) {
+        if (status == "Top Indicator") {
+          addStyle(wb, "All_Indicators", top_indicator_style, rows = row_num, cols = 1:ncol(table_comprehensive))
+        } else if (status == "Strong Indicator") {
+          addStyle(wb, "All_Indicators", strong_indicator_style, rows = row_num, cols = 1:ncol(table_comprehensive))
+        } else if (status == "Needs Attention") {
+          addStyle(wb, "All_Indicators", needs_attention_style, rows = row_num, cols = 1:ncol(table_comprehensive))
+        } else {
+          addStyle(wb, "All_Indicators", standard_style, rows = row_num, cols = 1:ncol(table_comprehensive))
+        }
+      }
+    }
+  }
+  
+  # Pillar summary
+  addWorksheet(wb, "Pillar_Summary")
+  writeData(wb, "Pillar_Summary", "Summary Statistics by Pillar", startRow = 1)
+  writeData(wb, "Pillar_Summary", table_by_pillar, startRow = 3)
+  addStyle(wb, "Pillar_Summary", title_style, rows = 1, cols = 1)
+  addStyle(wb, "Pillar_Summary", header_style, rows = 3, cols = 1:ncol(table_by_pillar))
+  
+  # Top performers
+  addWorksheet(wb, "Top_Performers")
+  writeData(wb, "Top_Performers", "Top Performing Indicators", startRow = 1)
+  writeData(wb, "Top_Performers", table_top_performers, startRow = 3)
+  addStyle(wb, "Top_Performers", title_style, rows = 1, cols = 1)
+  addStyle(wb, "Top_Performers", header_style, rows = 3, cols = 1:ncol(table_top_performers))
+  
+  # Apply green highlighting for top performers (only if data exists)
+  if (nrow(table_top_performers) > 0) {
+    for (i in 1:nrow(table_top_performers)) {
+      addStyle(wb, "Top_Performers", top_indicator_style, rows = i + 3, cols = 1:ncol(table_top_performers))
+    }
+  }
+  
+  # Needs attention
+  addWorksheet(wb, "Needs_Attention")
+  writeData(wb, "Needs_Attention", "Indicators Requiring Attention", startRow = 1)
+  writeData(wb, "Needs_Attention", table_attention_needed, startRow = 3)
+  addStyle(wb, "Needs_Attention", title_style, rows = 1, cols = 1)
+  addStyle(wb, "Needs_Attention", header_style, rows = 3, cols = 1:ncol(table_attention_needed))
+  
+  # Apply red highlighting for attention needed (only if data exists)
+  if (nrow(table_attention_needed) > 0) {
+    for (i in 1:nrow(table_attention_needed)) {
+      addStyle(wb, "Needs_Attention", needs_attention_style, rows = i + 3, cols = 1:ncol(table_attention_needed))
+    }
+  }
+  
+  # Set column widths for all sheets
+  sheets <- c("All_Indicators", "Pillar_Summary", "Top_Performers", "Needs_Attention")
+  for (sheet in sheets) {
+    setColWidths(wb, sheet, cols = 1:20, widths = "auto")
+  }
+  
+  return(wb)
+}
+
+# Create and save comprehensive styled Excel
+tryCatch({
+  wb_comprehensive <- create_styled_excel_workbook()
+  excel_file <- file.path(export_dir, "GAI_Comprehensive_Summary_Tables_Styled.xlsx")
+  saveWorkbook(wb_comprehensive, excel_file, overwrite = TRUE)
+  message("✓ Comprehensive styled Excel exported: ", excel_file)
+}, error = function(e) {
+  message("✗ Error creating comprehensive Excel: ", e$message)
+})
+
+# Export individual Excel files (simple format)
+individual_exports <- list(
+  "All_Indicators_Summary.xlsx" = table_comprehensive,
+  "Pillar_Summary.xlsx" = table_by_pillar,
+  "Top_Performers_Summary.xlsx" = table_top_performers,
+  "Needs_Attention_Summary.xlsx" = table_attention_needed
+)
+
+for (filename in names(individual_exports)) {
+  tryCatch({
+    file_path <- file.path(export_dir, filename)
+    write.xlsx(individual_exports[[filename]], file_path, overwrite = TRUE)
+    message("✓ Individual Excel exported: ", filename)
+  }, error = function(e) {
+    message("✗ Error exporting ", filename, ": ", e$message)
+  })
+}
+
+# ================================================================
+# STEP 5: CREATE PUBLICATION-READY SUMMARY
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("STEP 5: CREATING PUBLICATION-READY SUMMARY")
+message(paste(rep("=", 60), collapse=""))
+
+# Create publication summary with error handling
+publication_summary <- list(
+  overall_stats = data.frame(
+    Metric = c("Total Indicators", "Technology Indicators", "Sustainability Indicators", 
+               "Geopolitical Indicators", "Top Performers", "Needs Attention", 
+               "Average Coverage (%)", "Best Performing Pillar"),
+    Value = c(
+      nrow(summary_all),
+      sum(summary_all$Pillar == "Technology"),
+      sum(summary_all$Pillar == "Sustainability"),
+      sum(summary_all$Pillar == "Geopolitical"),
+      nrow(table_top_performers),
+      nrow(table_attention_needed),
+      round(mean(summary_all$Coverage_Pct, na.rm = TRUE), 1),
+      if(nrow(table_by_pillar) > 0) table_by_pillar$Pillar[which.max(table_by_pillar$Avg_Mean)] else "Unknown"
+    ),
+    stringsAsFactors = FALSE
+  ),
+  
+  key_insights = data.frame(
+    Insight = c(
+      paste("Total of", nrow(summary_all), "indicators analyzed across 3 pillars"),
+      paste(nrow(table_top_performers), "indicators identified as top performers"),
+      paste(nrow(table_attention_needed), "indicators require attention"),
+      paste("Average data coverage:", round(mean(summary_all$Coverage_Pct, na.rm = TRUE), 1), "%"),
+      paste("Best performing pillar:", if(nrow(table_by_pillar) > 0) table_by_pillar$Pillar[which.max(table_by_pillar$Avg_Mean)] else "Unknown")
+    ),
+    stringsAsFactors = FALSE
+  )
+)
+
+# Export publication summary
+tryCatch({
+  pub_wb <- createWorkbook()
+  addWorksheet(pub_wb, "Overall_Stats")
+  addWorksheet(pub_wb, "Key_Insights")
+  
+  writeData(pub_wb, "Overall_Stats", publication_summary$overall_stats)
+  writeData(pub_wb, "Key_Insights", publication_summary$key_insights)
+  
+  pub_file <- file.path(export_dir, "Publication_Summary.xlsx")
+  saveWorkbook(pub_wb, pub_file, overwrite = TRUE)
+  message("✓ Publication summary exported: ", pub_file)
+}, error = function(e) {
+  message("✗ Error exporting publication summary: ", e$message)
+})
+
+# ================================================================
+# STEP 6: CREATE CSV EXPORTS FOR EASY IMPORT
+# ================================================================
+
+message("\n", paste(rep("=", 60), collapse=""))
+message("STEP 6: CREATING CSV EXPORTS")
+message(paste(rep("=", 60), collapse=""))
+
+# CSV exports for easy data sharing
+csv_exports <- list(
+  "comprehensive_summary.csv" = table_comprehensive,
+  "pillar_summary.csv" = table_by_pillar,
+  "top_performers.csv" = table_top_performers,
+  "needs_attention.csv" = table_attention_needed
+)
+
+for (filename in names(csv_exports)) {
+  tryCatch({
+    file_path <- file.path(export_dir, filename)
+    write.csv(csv_exports[[filename]], file_path, row.names = FALSE)
+    message("✓ CSV exported: ", filename)
+  }, error = function(e) {
+    message("✗ Error exporting CSV ", filename, ": ", e$message)
+  })
+}
+
+# ================================================================
+# FINAL SUMMARY AND RECOMMENDATIONS
+# ================================================================
+
+message("\n", paste(rep("=", 80), collapse=""))
+message("COMPREHENSIVE SUMMARY TABLE GENERATION COMPLETED (FIXED)")
+message(paste(rep("=", 80), collapse=""))
+
+message("\nANALYSIS SUMMARY:")
+message("  Total Indicators Analyzed: ", nrow(summary_all))
+message("  Technology Indicators: ", sum(summary_all$Pillar == "Technology"))
+message("  Sustainability Indicators: ", sum(summary_all$Pillar == "Sustainability"))
+message("  Geopolitical Indicators: ", sum(summary_all$Pillar == "Geopolitical"))
+message("  Top Performers: ", nrow(table_top_performers))
+message("  Need Attention: ", nrow(table_attention_needed))
+
+message("\nFILES EXPORTED TO: ", export_dir)
+message("\nEXCEL FILES:")
+message("  - GAI_Comprehensive_Summary_Tables_Styled.xlsx (master with styling)")
+message("  - All_Indicators_Summary.xlsx")
+message("  - Pillar_Summary.xlsx")
+message("  - Top_Performers_Summary.xlsx")
+message("  - Needs_Attention_Summary.xlsx")
+message("  - Publication_Summary.xlsx")
+
+message("\nCSV FILES:")
+message("  - comprehensive_summary.csv")
+message("  - pillar_summary.csv")
+message("  - top_performers.csv")
+message("  - needs_attention.csv")
+
+message("\nFIXES APPLIED:")
+message("  ✓ Removed na.rm argument from rank() function")
+message("  ✓ Added NA filtering before ranking")
+message("  ✓ Added error handling for empty datasets")
+message("  ✓ Enhanced conditional formatting safety checks")
+
+message("\nRECOMMENDATIONS FOR CHAPTER/ANNEX:")
+message("\n1. MAIN CHAPTER TABLES:")
+message("   - Use 'Pillar_Summary.xlsx' for executive overview")
+message("   - Include 'Top_Performers' table to highlight strengths")
+
+message("\n2. DETAILED ANNEX:")
+message("   - Use 'All_Indicators_Summary.xlsx' for complete reference")
+message("   - Include 'Needs_Attention' table for methodological notes")
+
+message("\n3. DATA SHARING:")
+message("   - CSV files for easy import into other tools")
+message("   - Styled Excel for formal presentations")
+
+message("\n4. KEY INSIGHTS:")
+for (insight in publication_summary$key_insights$Insight) {
+  message("   - ", insight)
+}
+
+message("\n", paste(rep("=", 80), collapse=""))
+message("ALL SUMMARY TABLES SUCCESSFULLY GENERATED (FIXED VERSION)!")
+message("Timestamp: ", execution_metadata$datetime_utc)
+message("User: ", execution_metadata$user)
+message(paste(rep("=", 80), collapse=""))
